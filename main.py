@@ -34,6 +34,11 @@ def index():
     app.logger.info("Serving index.html to %s", request.remote_addr)
     return send_from_directory('.', 'index.html')
 
+@app.route('/atlas')
+def atlas():
+    app.logger.info("Serving atlas.html to %s", request.remote_addr)
+    return send_from_directory('.', 'atlas.html')
+
 @app.route('/data')
 def get_data():
     # Log and update tracking info

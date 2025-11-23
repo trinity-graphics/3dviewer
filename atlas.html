@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>3x3 Atlas Viewer</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; background: #222; color: #eee; }
+        header { padding: 10px; background: #111; display:flex; gap:12px; align-items:center; }
+        #controls { display:flex; gap:8px; align-items:center; }
+        #grid { display:grid; grid-template-columns: repeat(3, 1fr); grid-gap: 6px; padding:6px; }
+        .slot { background: #000; position: relative; min-height: 200px; overflow: hidden; }
+        .meta { position:absolute; left:6px; top:6px; background:rgba(0,0,0,0.6); padding:4px 6px; border-radius:4px; font-size:12px; }
+        canvas { display:block; width:100%; height:100%; }
+        button, select { padding:6px 8px; font-size:14px; }
+        #pager { margin-left: auto; display:flex; gap:6px; align-items:center; }
+    </style>
+</head>
+<body>
+    <header>
+        <div id="controls">
+            <label for="dataset-select">Dataset:</label>
+            <select id="dataset-select"></select>
+            <label><input type="checkbox" id="weld-toggle" checked> Weld vertices</label>
+        </div>
+        <div id="pager">
+            <button id="prev-page">◀ Prev</button>
+            <div id="page-info">Page 0 / 0</div>
+            <button id="next-page">Next ▶</button>
+        </div>
+    </header>
+
+    <div id="grid">
+        <!-- nine viewer slots -->
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
+        import { OBJLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/OBJLoader.js';
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js';
+
+        const grid = document.getElementById('grid');
+        const datasetSelect = document.getElementById('dataset-select');
+        const prevBtn = document.getElementById('prev-page');
+        const nextBtn = document.getElementById('next-page');
+        const pageInfo = document.getElementById('page-info');
+        const weldToggle = document.getElementById('weld-toggle');
+
+        // viewers will hold 9 viewer objects
+        const viewers = [];
+        const loader = new OBJLoader();
+
+        // flattened file list for currently selected dataset
+        let fileList = [];
+        let currentPage = 0;
+        const pageSize = 9;
+
+        // create 9 slots
+        for (let i = 0; i < 9; i++) {
+            const slot = document.createElement('div');
+            slot.className = 'slot';
+
+            const meta = document.createElement('div');
+            meta.className = 'meta';
+            meta.textContent = 'Empty';
+            slot.appendChild(meta);
+
+            const canvas = document.createElement('canvas');
+            slot.appendChild(canvas);
+            grid.appendChild(slot);
+
+            // Three.js renderer using this canvas
+            const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: true });
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.setSize(slot.clientWidth, slot.clientHeight, false);
+            renderer.setClearColor(0x000000, 0);
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x111111);
+
+            const camera = new THREE.PerspectiveCamera(50, slot.clientWidth / slot.clientHeight, 0.01, 1000);
+            camera.position.set(0, 0, 2);
+
+            const controls = new OrbitControls(camera, canvas);
+            controls.enableDamping = true;
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambient);
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(1,1,1);
+            scene.add(dir);
+
+            viewers.push({ slot, meta, canvas, renderer, scene, camera, controls, current: null });
+        }
+
+        function resizeAll() {
+            viewers.forEach(v => {
+                const w = v.slot.clientWidth;
+                const h = v.slot.clientHeight;
+                v.renderer.setSize(w, h, false);
+                v.camera.aspect = w / h;
+                v.camera.updateProjectionMatrix();
+            });
+        }
+
+        window.addEventListener('resize', () => {
+            resizeAll();
+        });
+
+        // render loop for all viewers
+        function animate() {
+            requestAnimationFrame(animate);
+            viewers.forEach(v => {
+                v.controls.update();
+                v.renderer.render(v.scene, v.camera);
+            });
+        }
+        animate();
+
+        // load data (same approach as index.html's loadData()).
+        function loadDataAtlas() {
+            const dataUrl = '/data?bust=' + Date.now();
+            return fetch(dataUrl, { cache: 'no-store' })
+                .then(response => {
+                    if (!response.ok) throw new Error('Server returned ' + response.status);
+                    return response.text().then(text => {
+                        try { return JSON.parse(text); }
+                        catch (e) {
+                            if (text.trim().startsWith('<')) throw new Error('non-json-response');
+                            throw e;
+                        }
+                    });
+                })
+                .catch(err => {
+                    if (err && err.message === 'non-json-response') {
+                        return fetch('/data_files.json', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('fallback returned ' + r.status); return r.json(); });
+                    }
+                    throw err;
+                });
+        }
+
+        // flatten files for a selected dataset name and deduplicate
+        function flattenList(x) {
+            if (!x) return [];
+            if (Array.isArray(x)) return x.flat(Infinity).filter(v => v != null);
+            if (typeof x === 'object') return Object.values(x).flatMap(v => flattenList(v));
+            return [x];
+        }
+
+        function setFileListForDataset(data, datasetName) {
+            const raw = data[datasetName] || [];
+            // flatten nested arrays/objects and remove duplicates while preserving order
+            const flat = flattenList(raw);
+            const seen = new Set();
+            fileList = [];
+            for (const p of flat) {
+                if (!seen.has(p)) { seen.add(p); fileList.push(p); }
+            }
+            currentPage = 0;
+            updatePager();
+            showPage(currentPage);
+        }
+
+        function updatePager() {
+            const pages = Math.max(1, Math.ceil(fileList.length / pageSize));
+            pageInfo.textContent = `Page ${currentPage+1} / ${pages}`;
+            prevBtn.disabled = (currentPage === 0);
+            nextBtn.disabled = (currentPage >= pages - 1);
+        }
+
+        prevBtn.addEventListener('click', () => { if (currentPage > 0) { currentPage--; updatePager(); showPage(currentPage); } });
+        nextBtn.addEventListener('click', () => { const pages = Math.max(1, Math.ceil(fileList.length / pageSize)); if (currentPage < pages-1) { currentPage++; updatePager(); showPage(currentPage); } });
+
+        // keyboard navigation: left/right to page
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') { if (currentPage > 0) { currentPage--; updatePager(); showPage(currentPage); } }
+            if (e.key === 'ArrowRight') { const pages = Math.max(1, Math.ceil(fileList.length / pageSize)); if (currentPage < pages-1) { currentPage++; updatePager(); showPage(currentPage); } }
+        });
+
+        function clearViewer(v) {
+            if (!v) return;
+            if (v.current) {
+                v.scene.remove(v.current);
+                v.current.traverse(c => { if (c.geometry) c.geometry.dispose && c.geometry.dispose(); if (c.material) { if (Array.isArray(c.material)) c.material.forEach(m=>m.dispose && m.dispose()); else c.material.dispose && c.material.dispose(); } });
+                v.current = null;
+            }
+            v.meta.textContent = 'Empty';
+        }
+
+        function loadIntoViewer(v, path) {
+            clearViewer(v);
+            v.meta.textContent = 'Loading...';
+            loader.load(`/object?path=${encodeURIComponent(path)}`,
+                (obj) => {
+                    // center and scale
+                    obj.updateMatrixWorld(true);
+                    const box = new THREE.Box3().setFromObject(obj);
+                    const size = box.getSize(new THREE.Vector3());
+                    const maxDim = Math.max(size.x, size.y, size.z, 1e-6);
+                    const center = box.getCenter(new THREE.Vector3());
+                    obj.position.sub(center);
+
+                    // apply a simple material if meshes missing
+                    obj.traverse(child => { if (child.isMesh) { if (!child.material) child.material = new THREE.MeshStandardMaterial({ color: 0x999999 }); child.castShadow = true; child.receiveShadow = true; } });
+
+                    v.scene.add(obj);
+                    v.current = obj;
+
+                    // fit camera
+                    v.camera.position.set(0, 0, maxDim * 2.0 + 0.1);
+                    v.camera.near = Math.max(0.01, maxDim / 1000);
+                    v.camera.far = Math.max(10, maxDim * 10);
+                    v.camera.updateProjectionMatrix();
+                    v.controls.target.set(0,0,0);
+                    v.controls.update();
+
+                    const fileName = path.split('/').pop();
+                    v.meta.textContent = fileName;
+                },
+                (xhr) => {
+                    // progress
+                },
+                (err) => {
+                    console.error('Viewer load error', err);
+                    v.meta.textContent = 'Load error';
+                }
+            );
+        }
+
+        function showPage(page) {
+            const start = page * pageSize;
+            for (let i = 0; i < pageSize; i++) {
+                const idx = start + i;
+                const v = viewers[i];
+                if (idx < fileList.length) {
+                    loadIntoViewer(v, fileList[idx]);
+                } else {
+                    clearViewer(v);
+                }
+            }
+        }
+
+        // initialize: load /data and populate dataset select
+        loadDataAtlas().then(data => {
+            const datasets = Object.keys(data || {});
+            datasets.forEach(name => {
+                const opt = document.createElement('option'); opt.value = name; opt.textContent = name; datasetSelect.appendChild(opt);
+            });
+            if (datasets.length > 0) {
+                datasetSelect.value = datasets[0];
+                setFileListForDataset(data, datasets[0]);
+            }
+
+            datasetSelect.addEventListener('change', () => setFileListForDataset(data, datasetSelect.value));
+        }).catch(err => {
+            console.error('Failed to load /data', err);
+            const errDiv = document.createElement('div'); errDiv.style.padding='12px'; errDiv.textContent = 'Failed to load /data: ' + (err && err.message ? err.message : String(err)); document.body.appendChild(errDiv);
+        });
+
+    </script>
+</body>
+</html>
