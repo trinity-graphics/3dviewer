@@ -22,6 +22,12 @@
             <label for="dataset-select">Dataset:</label>
             <select id="dataset-select"></select>
             <label><input type="checkbox" id="weld-toggle" checked> Weld vertices</label>
+            <label for="view-mode" style="margin-left:8px;">View:</label>
+            <select id="view-mode">
+                <option value="surface">Surface</option>
+                <option value="wireframe">Wireframe</option>
+                <option value="both">Both</option>
+            </select>
         </div>
         <div id="pager">
             <button id="prev-page">◀ Prev</button>
@@ -49,6 +55,7 @@
         // viewers will hold 9 viewer objects
         const viewers = [];
         const loader = new OBJLoader();
+        const viewModeSelect = document.getElementById('view-mode');
 
         // flattened file list for currently selected dataset
         let fileList = [];
@@ -90,7 +97,7 @@
             dir.position.set(1,1,1);
             scene.add(dir);
 
-            viewers.push({ slot, meta, canvas, renderer, scene, camera, controls, current: null });
+            viewers.push({ slot, meta, canvas, renderer, scene, camera, controls, current: null, wireframeOverlay: null });
         }
 
         function resizeAll() {
@@ -185,6 +192,38 @@
                 v.current = null;
             }
             v.meta.textContent = 'Empty';
+            if (v.wireframeOverlay) { v.scene.remove(v.wireframeOverlay); v.wireframeOverlay = null; }
+        }
+
+        function applyViewModeToObject(v, obj) {
+            const mode = viewModeSelect ? viewModeSelect.value : 'surface';
+            // remove any overlay
+            if (v.wireframeOverlay) { v.scene.remove(v.wireframeOverlay); v.wireframeOverlay = null; }
+
+            obj.traverse(child => {
+                if (!child.isMesh) return;
+                // ensure material
+                if (!child.material) child.material = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
+                if (mode === 'wireframe') {
+                    child.material.wireframe = true;
+                } else if (mode === 'surface') {
+                    child.material.wireframe = false;
+                } else if (mode === 'both') {
+                    child.material.wireframe = false;
+                }
+            });
+
+            if (mode === 'both') {
+                // create a wireframe overlay clone
+                const overlay = obj.clone();
+                overlay.traverse(child => {
+                    if (child.isMesh) {
+                        child.material = new THREE.MeshBasicMaterial({ color: 0x000000, wireframe: true });
+                    }
+                });
+                v.scene.add(overlay);
+                v.wireframeOverlay = overlay;
+            }
         }
 
         function loadIntoViewer(v, path) {
@@ -205,6 +244,9 @@
 
                     v.scene.add(obj);
                     v.current = obj;
+
+                    // apply current view mode
+                    applyViewModeToObject(v, obj);
 
                     // fit camera
                     v.camera.position.set(0, 0, maxDim * 2.0 + 0.1);
@@ -238,6 +280,15 @@
                     clearViewer(v);
                 }
             }
+        }
+
+        // update viewers when global view mode changes
+        if (viewModeSelect) {
+            viewModeSelect.addEventListener('change', () => {
+                viewers.forEach(v => {
+                    if (v.current) applyViewModeToObject(v, v.current);
+                });
+            });
         }
 
         // initialize: load /data and populate dataset select
