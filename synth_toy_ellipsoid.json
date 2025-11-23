@@ -1,0 +1,4 @@
+{
+    "synth_toy_ellipsoid_train" : "/media/koi/Expansion/data/synth_toy/ellipsoid/train",
+    "synth_toy_ellipsoid_valid" : "/media/koi/Expansion/data/synth_toy/ellipsoid/valid"
+}
