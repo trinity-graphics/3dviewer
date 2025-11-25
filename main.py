@@ -1,4 +1,5 @@
-from flask import Flask, jsonify, request, send_from_directory, send_file
+from flask import Flask, jsonify, request, send_from_directory, send_file, Response
+import html
 import argparse
 import json
 import os
@@ -41,8 +42,23 @@ def atlas():
 
 @app.route('/mv_2')
 def mv_2():
-    app.logger.info("Serving mv_2.html to %s", request.remote_addr)
-    return send_from_directory('.', 'mv_2.html')
+    # Validate that data_files.json is suitable for the two-viewer page.
+    ok, err = validate_data_files_for_mv2()
+    if ok:
+        app.logger.info("Serving mv_2.html to %s", request.remote_addr)
+        return send_from_directory('.', 'mv_2.html')
+    # If validation fails, log it and show a friendly error page (error.html).
+    app.logger.error("mv_2 validation failed: %s", err)
+    # Try to read an error.html template and inject the message. If not present, return a simple HTML response.
+    try:
+        with open('error.html', 'r') as f:
+            tpl = f.read()
+        content = tpl.replace('{message}', html.escape(err or 'Unknown error'))
+        return Response(content, status=400, mimetype='text/html')
+    except FileNotFoundError:
+        # Fallback minimal error response
+        fallback = f"<html><head><title>mv_2 - configuration error</title></head><body><h1>mv_2 configuration error</h1><p>{html.escape(err or 'Unknown error')}</p></body></html>"
+        return Response(fallback, status=400, mimetype='text/html')
 
 @app.route('/data')
 def get_data():
@@ -93,6 +109,39 @@ def serve_data_files_json():
     resp.headers['Pragma'] = 'no-cache'
     resp.headers['Expires'] = '0'
     return resp
+
+
+def validate_data_files_for_mv2():
+    """Validate that DATA_FILES_PATH contains exactly two datasets with equal sample counts.
+
+    Returns (True, None) if valid, otherwise (False, error_message).
+    """
+    try:
+        with open(DATA_FILES_PATH, 'r') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return False, f"{DATA_FILES_PATH} not found"
+    except json.JSONDecodeError as e:
+        return False, f"Failed to parse {DATA_FILES_PATH}: {e}"
+
+    if not isinstance(data, dict):
+        return False, f"{DATA_FILES_PATH} must be a JSON object mapping dataset keys to arrays"
+
+    keys = list(data.keys())
+    if len(keys) != 2:
+        return False, f"Expected exactly 2 datasets, found {len(keys)}: {keys}"
+
+    lengths = []
+    for k in keys:
+        v = data.get(k)
+        if not isinstance(v, list):
+            return False, f"Dataset '{k}' must be an array of file paths"
+        lengths.append(len(v))
+
+    if lengths[0] != lengths[1]:
+        return False, f"Datasets have different sample counts: {keys[0]}={lengths[0]} vs {keys[1]}={lengths[1]}"
+
+    return True, None
 
 @app.route('/object')
 def get_object():

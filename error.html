@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>mv_2 - configuration error</title>
+  <style>
+    body { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial; background:#f7f7f9; color:#222; padding:30px; }
+    .card { background: white; border-radius:8px; padding:20px; max-width:880px; margin:30px auto; box-shadow:0 6px 18px rgba(0,0,0,0.06);} 
+    h1 { margin-top:0; color:#b30000 }
+    pre { background:#f3f4f6; padding:12px; border-radius:6px; overflow:auto }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>mv_2 configuration error</h1>
+    <p>The two-viewer page requires a specific structure in <code>data_files.json</code>:</p>
+    <ol>
+      <li>Exactly two dataset keys at the top level.</li>
+      <li>Each dataset must be an array of file paths.</li>
+      <li>Both arrays must contain the same number of samples.</li>
+    </ol>
+
+    <p>Server validation failed with the following message:</p>
+    <pre>{message}</pre>
+
+    <p>To fix this, update <code>data_files.json</code> (or the server-side generator) so it contains exactly two datasets with equal counts. You can also check the server logs for more details.</p>
+
+    <p><a href="/data">View the served /data JSON</a> · <a href="/data_files.json">Download data_files.json</a></p>
+  </div>
+</body>
+</html>
