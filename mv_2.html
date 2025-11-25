@@ -522,6 +522,42 @@
                                 if (typeof right.resetRotation === 'function') right.resetRotation();
                                 handled = true;
                                 break;
+                            case 'h': // surface
+                                try {
+                                    const lApi = (typeof left.getElements === 'function') ? left.getElements() : left.getElements;
+                                    const rApi = (typeof right.getElements === 'function') ? right.getElements() : right.getElements;
+                                    if (lApi && lApi.viewModeSelect) { lApi.viewModeSelect.value = 'surface'; lApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                    if (rApi && rApi.viewModeSelect) { rApi.viewModeSelect.value = 'surface'; rApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                } catch (err) { console.warn('set view mode surface failed', err); }
+                                handled = true;
+                                break;
+                            case 'j': // wireframe
+                                try {
+                                    const lApi = (typeof left.getElements === 'function') ? left.getElements() : left.getElements;
+                                    const rApi = (typeof right.getElements === 'function') ? right.getElements() : right.getElements;
+                                    if (lApi && lApi.viewModeSelect) { lApi.viewModeSelect.value = 'wireframe'; lApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                    if (rApi && rApi.viewModeSelect) { rApi.viewModeSelect.value = 'wireframe'; rApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                } catch (err) { console.warn('set view mode wireframe failed', err); }
+                                handled = true;
+                                break;
+                            case 'k': // both
+                                try {
+                                    const lApi = (typeof left.getElements === 'function') ? left.getElements() : left.getElements;
+                                    const rApi = (typeof right.getElements === 'function') ? right.getElements() : right.getElements;
+                                    if (lApi && lApi.viewModeSelect) { lApi.viewModeSelect.value = 'both'; lApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                    if (rApi && rApi.viewModeSelect) { rApi.viewModeSelect.value = 'both'; rApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                } catch (err) { console.warn('set view mode both failed', err); }
+                                handled = true;
+                                break;
+                            case 'l': // components
+                                try {
+                                    const lApi = (typeof left.getElements === 'function') ? left.getElements() : left.getElements;
+                                    const rApi = (typeof right.getElements === 'function') ? right.getElements() : right.getElements;
+                                    if (lApi && lApi.viewModeSelect) { lApi.viewModeSelect.value = 'components'; lApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                    if (rApi && rApi.viewModeSelect) { rApi.viewModeSelect.value = 'components'; rApi.viewModeSelect.dispatchEvent(new Event('change')); }
+                                } catch (err) { console.warn('set view mode components failed', err); }
+                                handled = true;
+                                break;
                             case 't': // scale up
                                 try {
                                     const up = 1.05; if (typeof left.scaleBy === 'function') left.scaleBy(up); if (typeof right.scaleBy === 'function') right.scaleBy(up);
@@ -553,7 +589,7 @@
             div.style.borderRadius = '6px';
             div.style.fontSize = '12px';
             div.style.zIndex = '1000';
-            div.innerHTML = 'Keys: W/S = rotate X | A/D = rotate Y | Q/E = rotate Z | T/G = scale up/down | ←/→ = prev/next object | F = reset';
+            div.innerHTML = 'Keys: W/S = rotate X | A/D = rotate Y | Q/E = rotate Z | H/J/K/L = Surface/Wireframe/Both/Components | T/G = scale up/down | ←/→ = prev/next object | F = reset';
             document.body.appendChild(div);
         })();
     </script>
