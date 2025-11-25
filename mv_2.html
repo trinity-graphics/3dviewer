@@ -312,6 +312,12 @@
                             }
                         });
                         currentObject = object;
+                        // store original transform so we can reset later (position, rotation, scale)
+                        try {
+                            currentObject.userData.originalPosition = currentObject.position.clone();
+                            currentObject.userData.originalRotation = currentObject.rotation.clone();
+                            currentObject.userData.originalScale = currentObject.scale.clone();
+                        } catch (err) {}
                         const fileName = path.split('/').pop(); document.getElementById(`file-name-${side}`).textContent = `File: ${fileName}`;
                         updateObjectInfo(object);
                         const box = new THREE.Box3().setFromObject(object); const center = box.getCenter(new THREE.Vector3()); object.position.sub(center);
@@ -347,6 +353,44 @@
                         if (boxHelper) boxHelper.update();
                         updateObjectInfo(currentObject);
                     } catch (err) { console.warn('scaleBy failed', err); }
+                }
+                ,
+                // rotate current object by radians around axes (rx, ry, rz)
+                rotateBy(rx, ry, rz) {
+                    try {
+                        if (!currentObject) return;
+                        // apply rotations
+                        currentObject.rotation.x += rx || 0;
+                        currentObject.rotation.y += ry || 0;
+                        currentObject.rotation.z += rz || 0;
+                        if (wireframeObject) {
+                            wireframeObject.rotation.x += rx || 0;
+                            wireframeObject.rotation.y += ry || 0;
+                            wireframeObject.rotation.z += rz || 0;
+                        }
+                    } catch (err) { console.warn('rotateBy failed', err); }
+                },
+                // reset transforms (position, rotation, scale) to original saved state when object was loaded
+                resetRotation() {
+                    try {
+                        if (!currentObject) return;
+                        const ud = currentObject.userData || {};
+                        if (ud.originalPosition) {
+                            const p = ud.originalPosition; currentObject.position.set(p.x, p.y, p.z);
+                            if (wireframeObject) wireframeObject.position.set(p.x, p.y, p.z);
+                        }
+                        if (ud.originalRotation) {
+                            const r = ud.originalRotation; currentObject.rotation.set(r.x, r.y, r.z);
+                            if (wireframeObject) wireframeObject.rotation.set(r.x, r.y, r.z);
+                        }
+                        if (ud.originalScale) {
+                            const s = ud.originalScale; currentObject.scale.set(s.x, s.y, s.z);
+                            if (wireframeObject) wireframeObject.scale.set(s.x, s.y, s.z);
+                        }
+                        // update helpers/info
+                        if (boxHelper) boxHelper.update();
+                        updateObjectInfo(currentObject);
+                    } catch (err) { console.warn('resetRotation failed', err); }
                 }
             };
         }
@@ -429,6 +473,77 @@
                     console.warn('Global wheel scale failed', err);
                 }
             }, { passive: false });
+        })();
+
+        // Global keyboard rotate/reset: A/W/S/D/Q/E rotate both, F resets rotation
+        (function installGlobalKeyboardRotate() {
+            // rotation step in radians per key press
+            const STEP = 0.1;
+
+            window.addEventListener('keydown', (e) => {
+                // ignore when typing into inputs/selects
+                const active = document.activeElement;
+                if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA' || active.tagName === 'SELECT')) return;
+
+                let handled = false;
+                switch (e.key.toLowerCase()) {
+                    case 'a': // yaw left (around Y)
+                        if (typeof left.rotateBy === 'function') left.rotateBy(0, STEP, 0);
+                        if (typeof right.rotateBy === 'function') right.rotateBy(0, STEP, 0);
+                        handled = true;
+                        break;
+                    case 'd': // yaw right
+                        if (typeof left.rotateBy === 'function') left.rotateBy(0, -STEP, 0);
+                        if (typeof right.rotateBy === 'function') right.rotateBy(0, -STEP, 0);
+                        handled = true;
+                        break;
+                    case 'w': // pitch up (around X)
+                        if (typeof left.rotateBy === 'function') left.rotateBy(-STEP, 0, 0);
+                        if (typeof right.rotateBy === 'function') right.rotateBy(-STEP, 0, 0);
+                        handled = true;
+                        break;
+                    case 's': // pitch down
+                        if (typeof left.rotateBy === 'function') left.rotateBy(STEP, 0, 0);
+                        if (typeof right.rotateBy === 'function') right.rotateBy(STEP, 0, 0);
+                        handled = true;
+                        break;
+                    case 'q': // roll left (around Z)
+                        if (typeof left.rotateBy === 'function') left.rotateBy(0, 0, STEP);
+                        if (typeof right.rotateBy === 'function') right.rotateBy(0, 0, STEP);
+                        handled = true;
+                        break;
+                    case 'e': // roll right
+                        if (typeof left.rotateBy === 'function') left.rotateBy(0, 0, -STEP);
+                        if (typeof right.rotateBy === 'function') right.rotateBy(0, 0, -STEP);
+                        handled = true;
+                        break;
+                    case 'f': // reset
+                        if (typeof left.resetRotation === 'function') left.resetRotation();
+                        if (typeof right.resetRotation === 'function') right.resetRotation();
+                        handled = true;
+                        break;
+                }
+                if (handled) {
+                    e.preventDefault();
+                }
+            });
+        })();
+
+        // Add global instruction area at bottom center
+        (function addGlobalInstructions() {
+            const div = document.createElement('div');
+            div.style.position = 'fixed';
+            div.style.bottom = '6px';
+            div.style.left = '50%';
+            div.style.transform = 'translateX(-50%)';
+            div.style.padding = '6px 10px';
+            div.style.background = 'rgba(0,0,0,0.6)';
+            div.style.color = '#fff';
+            div.style.borderRadius = '6px';
+            div.style.fontSize = '12px';
+            div.style.zIndex = '1000';
+            div.innerHTML = 'Keys: W/S = rotate X | A/D = rotate Y | Q/E = rotate Z | F = reset rotations';
+            document.body.appendChild(div);
         })();
     </script>
 </body>
