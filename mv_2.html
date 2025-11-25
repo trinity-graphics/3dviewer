@@ -522,6 +522,15 @@
                                 if (typeof right.resetRotation === 'function') right.resetRotation();
                                 handled = true;
                                 break;
+                            case 'x': // toggle axes for both viewers
+                                try {
+                                    const leftAxes = document.getElementById('axes-toggle-left');
+                                    const rightAxes = document.getElementById('axes-toggle-right');
+                                    if (leftAxes) { leftAxes.checked = !leftAxes.checked; leftAxes.dispatchEvent(new Event('change')); }
+                                    if (rightAxes) { rightAxes.checked = !rightAxes.checked; rightAxes.dispatchEvent(new Event('change')); }
+                                } catch (err) { console.warn('toggle axes failed', err); }
+                                handled = true;
+                                break;
                             case 'h': // surface
                                 try {
                                     const lApi = (typeof left.getElements === 'function') ? left.getElements() : left.getElements;
@@ -577,19 +586,33 @@
             });
         })();
 
-        // Add global instruction area at bottom right
+        // Add global instruction area at bottom right (lines like index.html)
         (function addGlobalInstructions() {
             const div = document.createElement('div');
             div.style.position = 'fixed';
             div.style.bottom = '6px';
             div.style.right = '6px';
-            div.style.padding = '6px 10px';
+            div.style.padding = '8px';
             div.style.background = 'rgba(0,0,0,0.6)';
             div.style.color = '#fff';
             div.style.borderRadius = '6px';
             div.style.fontSize = '12px';
             div.style.zIndex = '1000';
-            div.innerHTML = 'Keys: W/S = rotate X | A/D = rotate Y | Q/E = rotate Z | H/J/K/L = Surface/Wireframe/Both/Components | T/G = scale up/down | ←/→ = prev/next object | F = reset';
+
+            const title = document.createElement('div'); title.style.fontWeight = '600'; title.textContent = 'Controls:'; div.appendChild(title);
+            const addLine = (text) => { const d = document.createElement('div'); d.textContent = text; div.appendChild(d); };
+            addLine('• H/J/K/L: Surface / Wireframe / Both / Components');
+            addLine('• C: Toggle Components view');
+            addLine('• X: Toggle Axes');
+            addLine('• B: Toggle Bounding Box');
+            addLine('• D / Shift+D: Download OBJ (button or Shift+D)');
+            addLine('• T/G: Scale up/down');
+            addLine('• W/S: Rotate X-axis');
+            addLine('• A/D: Rotate Y-axis');
+            addLine('• Q/E: Rotate Z-axis');
+            addLine('• ←/→: Previous/Next object');
+            addLine('• F: Reset object transform to original (on load)');
+
             document.body.appendChild(div);
         })();
     </script>
