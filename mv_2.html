@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Object Viewer - Dual</title>
+    <style>
+        body { margin: 0; font-family: sans-serif; }
+        .viewer-row { display: flex; width: 100vw; height: 100vh; }
+        .viewer-column { flex: 1; position: relative; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+        .controls { position: absolute; top: 10px; left: 10px; padding: 8px; background: rgba(0,0,0,0.5); color:#fff; border-radius:6px; font-size:13px; z-index:10; }
+        .info { position: absolute; top: 10px; right: 10px; padding:8px; background: rgba(0,0,0,0.5); color:#fff; border-radius:6px; font-size:13px; max-width:260px; z-index:10; }
+        .instructions { position: absolute; bottom:10px; left:10px; padding:8px; background: rgba(0,0,0,0.5); color:#fff; border-radius:6px; font-size:12px; max-width:320px; z-index:10; }
+        select, button { margin:4px 0; }
+        .title { font-weight:600; margin-bottom:6px; }
+    </style>
+</head>
+<body>
+    <div class="viewer-row">
+        <div id="viewer-left" class="viewer-column">
+            <div class="controls" id="controls-left">
+                <div class="title">Left viewer</div>
+                <label>Dataset: <select id="dataset-select-left"></select></label><br>
+                <label>Object: <select id="object-select-left"></select></label><br>
+                <label>View: <select id="view-mode-select-left"><option value="surface">Surface</option><option value="wireframe">Wireframe</option><option value="both">Both</option><option value="components">Components</option></select></label><br>
+                <label><input type="checkbox" id="axes-toggle-left"> Show axes</label><br>
+                <label><input type="checkbox" id="weld-toggle-left"> Weld vertices</label><br>
+                <button id="download-btn-left">Download OBJ</button>
+            </div>
+            <div class="info" id="info-left">
+                <div><strong>Info (Left)</strong></div>
+                <div id="vertices-count-left">Vertices: -</div>
+                <div id="faces-count-left">Faces: -</div>
+                <div id="area-left">Surface area: -</div>
+                <div id="volume-left">Volume: -</div>
+                <div id="clusters-count-left">Clusters: -</div>
+                <div id="file-name-left">File: -</div>
+            </div>
+            <div class="instructions" id="instr-left">
+                <div><strong>Left controls</strong></div>
+                <div>Orbit: Drag, Zoom: Scroll</div>
+            </div>
+        </div>
+
+        <div id="viewer-right" class="viewer-column">
+            <div class="controls" id="controls-right">
+                <div class="title">Right viewer</div>
+                <label>Dataset: <select id="dataset-select-right"></select></label><br>
+                <label>Object: <select id="object-select-right"></select></label><br>
+                <label>View: <select id="view-mode-select-right"><option value="surface">Surface</option><option value="wireframe">Wireframe</option><option value="both">Both</option><option value="components">Components</option></select></label><br>
+                <label><input type="checkbox" id="axes-toggle-right"> Show axes</label><br>
+                <label><input type="checkbox" id="weld-toggle-right"> Weld vertices</label><br>
+                <button id="download-btn-right">Download OBJ</button>
+            </div>
+            <div class="info" id="info-right">
+                <div><strong>Info (Right)</strong></div>
+                <div id="vertices-count-right">Vertices: -</div>
+                <div id="faces-count-right">Faces: -</div>
+                <div id="area-right">Surface area: -</div>
+                <div id="volume-right">Volume: -</div>
+                <div id="clusters-count-right">Clusters: -</div>
+                <div id="file-name-right">File: -</div>
+            </div>
+            <div class="instructions" id="instr-right">
+                <div><strong>Right controls</strong></div>
+                <div>Orbit: Drag, Zoom: Scroll</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.132.2';
+        import { OBJLoader } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/loaders/OBJLoader.js';
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/controls/OrbitControls.js';
+        import { OBJExporter } from 'https://cdn.skypack.dev/three@0.132.2/examples/jsm/exporters/OBJExporter.js';
+
+        // Shared data fetched once
+        let fileData = {};
+
+        // Create two independent viewers: left and right
+        function createViewer(side) {
+            const container = document.getElementById(`viewer-${side}`);
+
+            const scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xdddddd);
+
+            const camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.z = 5;
+
+            const renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.domElement.style.width = '100%';
+            renderer.domElement.style.height = '100%';
+            container.appendChild(renderer.domElement);
+
+            const controls = new OrbitControls(camera, renderer.domElement);
+            // Enable damping for nicer motion and only allow controls when pointer is over this canvas.
+            controls.enableDamping = true;
+            // Disable camera zoom with wheel so we can handle global scroll to scale objects instead
+            controls.enableZoom = false;
+            controls.enabled = false; // start disabled until pointer enters
+            // Ensure only the canvas under the pointer receives wheel/drag events for camera interaction
+            renderer.domElement.addEventListener('pointerenter', () => { controls.enabled = true; });
+            renderer.domElement.addEventListener('pointerleave', () => { controls.enabled = false; });
+            // do not stop wheel here; global wheel will scale both objects
+
+            const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambient);
+            const dir = new THREE.DirectionalLight(0xffffff, 0.8);
+            dir.position.set(1,1,1);
+            scene.add(dir);
+
+            const axesHelper = new THREE.AxesHelper(1);
+            let axesVisible = false;
+
+            let currentObject = null;
+            let wireframeObject = null;
+            let boxHelper = null;
+            let bboxVisible = false;
+
+            const datasetSelect = document.getElementById(`dataset-select-${side}`);
+            const objectSelect = document.getElementById(`object-select-${side}`);
+            const viewModeSelect = document.getElementById(`view-mode-select-${side}`);
+            const axesToggle = document.getElementById(`axes-toggle-${side}`);
+            const downloadBtn = document.getElementById(`download-btn-${side}`);
+            const weldToggle = document.getElementById(`weld-toggle-${side}`);
+
+            if (weldToggle) weldToggle.checked = true;
+
+            function onResize() {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+
+            window.addEventListener('resize', onResize);
+
+            function animate() {
+                requestAnimationFrame(animate);
+                controls.update();
+                if (boxHelper) boxHelper.update();
+                renderer.render(scene, camera);
+            }
+            animate();
+
+            function updateViewMode() {
+                if (wireframeObject) {
+                    scene.remove(wireframeObject);
+                    wireframeObject = null;
+                }
+                if (!currentObject) return;
+                const mode = viewModeSelect.value;
+
+                // restore any original materials if present
+                if (currentObject._componentColorBackup) {
+                    currentObject.traverse((child) => {
+                        if (child.isMesh && child._originalMaterial) {
+                            child.material = child._originalMaterial;
+                            delete child._originalMaterial;
+                        }
+                    });
+                    delete currentObject._componentColorBackup;
+                }
+
+                currentObject.traverse((child) => {
+                    if (child.isMesh) {
+                        child.material.wireframe = (mode === 'wireframe');
+                    }
+                });
+
+                if (mode === 'both') {
+                    currentObject.traverse((child) => { if (child.isMesh) child.material.wireframe = false; });
+                    wireframeObject = currentObject.clone();
+                    const wfMat = new THREE.MeshBasicMaterial({ color:0x000000, wireframe:true });
+                    wireframeObject.traverse((c) => { if (c.isMesh) c.material = wfMat; });
+                    scene.add(wireframeObject);
+                }
+
+                if (mode === 'components') applyComponentColors(currentObject, weldToggle, side);
+            }
+
+            function downloadCurrentObject() {
+                if (!currentObject) { alert('No object loaded.'); return; }
+                try {
+                    const exporter = new OBJExporter();
+                    const objText = exporter.parse(currentObject);
+                    const blob = new Blob([objText], { type: 'text/plain' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    const name = (document.getElementById(`file-name-${side}`) && document.getElementById(`file-name-${side}`).textContent.replace('File: ', '')) || `model-${side}.obj`;
+                    a.href = url;
+                    a.download = name.endsWith('.obj') ? name : (name + '.obj');
+                    document.body.appendChild(a);
+                    a.click(); a.remove(); URL.revokeObjectURL(url);
+                } catch (err) {
+                    console.error('Export failed', err); alert('Export failed: ' + err.message);
+                }
+            }
+
+            downloadBtn.addEventListener('click', downloadCurrentObject);
+
+            axesToggle.addEventListener('change', (e) => {
+                axesVisible = !!e.target.checked;
+                if (axesVisible) scene.add(axesHelper); else scene.remove(axesHelper);
+            });
+
+            viewModeSelect.addEventListener('change', updateViewMode);
+
+            datasetSelect.addEventListener('change', () => {
+                const ds = datasetSelect.value;
+                const list = fileData[ds] || [];
+                objectSelect.innerHTML = '';
+                list.forEach(p => { const opt = document.createElement('option'); opt.value = p; opt.textContent = p.split('/').pop(); objectSelect.appendChild(opt); });
+                objectSelect.dispatchEvent(new Event('change'));
+            });
+
+            objectSelect.addEventListener('change', () => {
+                const path = objectSelect.value;
+                loadObject(path);
+            });
+
+            function applyComponentColors(rootObject, weldToggleElem, sideId) {
+                // similar algorithm to index.html but scoped per mesh
+                rootObject.traverse((mesh) => {
+                    if (!mesh.isMesh || !mesh.geometry) return;
+                    const geom = mesh.geometry;
+                    const pos = geom.attributes.position; if (!pos) return;
+                    mesh._originalMaterial = mesh.material;
+                    const vertexCount = pos.count;
+                    const worldPos = new Array(vertexCount);
+                    const tmp = new THREE.Vector3();
+                    for (let i=0;i<vertexCount;i++) { tmp.fromBufferAttribute(pos, i); mesh.localToWorld(tmp); worldPos[i]=tmp.clone(); }
+
+                    const doWeld = !(weldToggleElem && weldToggleElem.checked === false);
+                    let rep, repCount;
+                    if (doWeld) {
+                        const eps = 1e-4; const grid = new Map(); rep = new Uint32Array(vertexCount); repCount = 0;
+                        for (let i=0;i<vertexCount;i++) {
+                            const v = worldPos[i]; const kx = Math.round(v.x/eps), ky = Math.round(v.y/eps), kz = Math.round(v.z/eps);
+                            const key = kx+'_'+ky+'_'+kz; if (grid.has(key)) rep[i]=grid.get(key); else { grid.set(key, repCount); rep[i]=repCount; repCount++; }
+                        }
+                    } else { rep = new Uint32Array(vertexCount); for (let i=0;i<vertexCount;i++) rep[i]=i; repCount = vertexCount; }
+
+                    const parent = new Uint32Array(repCount); for (let i=0;i<repCount;i++) parent[i]=i;
+                    function find(a){ while(parent[a]!==a){ parent[a]=parent[parent[a]]; a=parent[a]; } return a; }
+                    function union(a,b){ const ra=find(a), rb=find(b); if (ra!==rb) parent[rb]=ra; }
+
+                    const index = geom.index ? Array.from(geom.index.array) : null;
+                    if (index) {
+                        for (let i=0;i<index.length;i+=3){ const ia=index[i], ib=index[i+1], ic=index[i+2]; union(rep[ia], rep[ib]); union(rep[ib], rep[ic]); union(rep[ic], rep[ia]); }
+                    } else {
+                        for (let i=0;i<vertexCount;i+=3){ union(rep[i], rep[i+1]); union(rep[i+1], rep[i+2]); union(rep[i+2], rep[i]); }
+                    }
+
+                    const compId = new Map(); let compCount = 0;
+                    for (let i=0;i<repCount;i++){ const r=find(i); if (!compId.has(r)) compId.set(r, compCount++); }
+
+                    const colors = new Float32Array(vertexCount*3);
+                    for (let i=0;i<vertexCount;i++){ const cid = compId.get(find(rep[i])); const hue = (cid * 0.618033988749895) % 1.0; const col = new THREE.Color().setHSL(hue, 0.6, 0.5); colors[i*3]=col.r; colors[i*3+1]=col.g; colors[i*3+2]=col.b; }
+                    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+                    const mat = mesh.material && mesh.material.clone ? mesh.material.clone() : new THREE.MeshPhongMaterial();
+                    mat.vertexColors = true; mesh.material = mat; rootObject._componentColorBackup = true; mesh._componentCount = compCount;
+                });
+                let totalClusters = 0; rootObject.traverse(m => { if (m._componentCount) totalClusters += m._componentCount; });
+                document.getElementById(`clusters-count-${side}`).textContent = `Clusters: ${totalClusters}`;
+            }
+
+            function updateObjectInfo(object) {
+                let totalVertices = 0, totalFaces = 0, totalArea = 0, signedVolume = 0;
+                const vA = new THREE.Vector3(), vB = new THREE.Vector3(), vC = new THREE.Vector3();
+                const ab = new THREE.Vector3(), cb = new THREE.Vector3(), cross = new THREE.Vector3(), cross2 = new THREE.Vector3();
+                object.updateMatrixWorld(true);
+                object.traverse((child)=>{
+                    if (!child.isMesh || !child.geometry) return;
+                    const geom = child.geometry; const position = geom.attributes.position; if (!position) return;
+                    const index = geom.index ? geom.index.array : null; totalVertices += position.count;
+                    const fetchAndWorld = (idx, target) => { target.fromBufferAttribute(position, idx); child.localToWorld(target); };
+                    if (index) {
+                        totalFaces += index.length/3;
+                        for (let i=0;i<index.length;i+=3){ fetchAndWorld(index[i], vA); fetchAndWorld(index[i+1], vB); fetchAndWorld(index[i+2], vC); ab.subVectors(vB,vA); cb.subVectors(vC,vA); cross.crossVectors(ab,cb); totalArea += 0.5 * cross.length(); cross2.crossVectors(vB, vC); signedVolume += vA.dot(cross2)/6.0; }
+                    } else {
+                        const posCount = position.count; totalFaces += posCount/3;
+                        for (let i=0;i<posCount;i+=3){ fetchAndWorld(i, vA); fetchAndWorld(i+1, vB); fetchAndWorld(i+2, vC); ab.subVectors(vB,vA); cb.subVectors(vC,vA); cross.crossVectors(ab,cb); totalArea += 0.5 * cross.length(); cross2.crossVectors(vB, vC); signedVolume += vA.dot(cross2)/6.0; }
+                    }
+                });
+                const volume = Math.abs(signedVolume);
+                document.getElementById(`vertices-count-${side}`).textContent = `Vertices: ${totalVertices.toLocaleString()}`;
+                document.getElementById(`faces-count-${side}`).textContent = `Faces: ${Math.floor(totalFaces).toLocaleString()}`;
+                document.getElementById(`area-${side}`).textContent = `Surface area: ${totalArea.toFixed(3)}`;
+                document.getElementById(`volume-${side}`).textContent = `Volume: ${volume.toFixed(3)}`;
+                if (bboxVisible) {
+                    const box = new THREE.Box3().setFromObject(object); const min = box.min, max = box.max, size = box.getSize(new THREE.Vector3());
+                    // no separate bbox UI in this dual view beyond info
+                }
+            }
+
+            function loadObject(path) {
+                if (!path) return;
+                if (currentObject) { scene.remove(currentObject); currentObject=null; }
+                if (wireframeObject) { scene.remove(wireframeObject); wireframeObject=null; }
+                if (boxHelper) { scene.remove(boxHelper); boxHelper=null; }
+                if (downloadBtn) downloadBtn.disabled = true;
+                const loader = new OBJLoader();
+                loader.load(`/object?path=${encodeURIComponent(path)}`,
+                    (object) => {
+                        // Deep-clone geometries and materials so multiple viewers don't share references
+                        object.traverse((c) => {
+                            if (c.isMesh) {
+                                if (c.geometry && c.geometry.clone) c.geometry = c.geometry.clone();
+                                if (c.material && c.material.clone) c.material = c.material.clone();
+                            }
+                        });
+                        currentObject = object;
+                        const fileName = path.split('/').pop(); document.getElementById(`file-name-${side}`).textContent = `File: ${fileName}`;
+                        updateObjectInfo(object);
+                        const box = new THREE.Box3().setFromObject(object); const center = box.getCenter(new THREE.Vector3()); object.position.sub(center);
+                        scene.add(object);
+                        if (axesHelper) { const size = box.getSize(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z); const scale = Math.max(1e-3, maxDim); axesHelper.scale.set(scale, scale, scale); axesHelper.position.copy(object.position); }
+                        if (bboxVisible) { if (boxHelper) scene.remove(boxHelper); boxHelper = new THREE.BoxHelper(object, 0xffff00); scene.add(boxHelper); }
+                        updateViewMode();
+                        // adjust camera to fit
+                        const size = box.getSize(new THREE.Vector3()); const maxDim = Math.max(size.x, size.y, size.z);
+                        const fov = camera.fov * (Math.PI/180); let cameraZ = Math.abs(maxDim/2 * Math.tan(fov*2)); cameraZ *= 1.5; camera.position.z = cameraZ; controls.update();
+                        if (downloadBtn) downloadBtn.disabled = false;
+                    },
+                    (xhr) => {},
+                    (err) => { console.error('Load error', err); }
+                );
+            }
+
+            // return an API for external wiring
+            return {
+                populateDatasets(datasets) {
+                    datasetSelect.innerHTML = '';
+                    datasets.forEach(ds => { const o = document.createElement('option'); o.value = ds; o.textContent = ds; datasetSelect.appendChild(o); });
+                    datasetSelect.dispatchEvent(new Event('change'));
+                },
+                getElements() { return { datasetSelect, objectSelect, viewModeSelect, weldToggle }; },
+                // scale current object by a factor (multiply current scale)
+                scaleBy(factor) {
+                    try {
+                        if (!currentObject) return;
+                        currentObject.scale.multiplyScalar(factor);
+                        if (wireframeObject) wireframeObject.scale.multiplyScalar(factor);
+                        // update box helper and info
+                        if (boxHelper) boxHelper.update();
+                        updateObjectInfo(currentObject);
+                    } catch (err) { console.warn('scaleBy failed', err); }
+                }
+            };
+        }
+
+        // instantiate viewers
+        const left = createViewer('left');
+        const right = createViewer('right');
+
+        // Fetch /data once and populate both dataset selects
+        (function fetchData(){
+            const url = '/data?bust=' + Date.now();
+            fetch(url, { cache: 'no-store' })
+                .then(r => { if (!r.ok) throw new Error('Server returned ' + r.status); return r.text(); })
+                .then(text => { try { return JSON.parse(text); } catch (e) { if (text.trim().startsWith('<')) throw new Error('non-json-response'); throw e; } })
+                .then(data => {
+                    fileData = data;
+                    const datasets = Object.keys(data || {});
+                    left.populateDatasets(datasets); right.populateDatasets(datasets);
+                })
+                .catch(err => {
+                    console.warn('/data failed, trying fallback', err);
+                    if (err && err.message === 'non-json-response') {
+                        fetch('/data_files.json', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('fallback ' + r.status); return r.json(); }).then(fd => { fileData = fd; const datasets = Object.keys(fd||{}); left.populateDatasets(datasets); right.populateDatasets(datasets); }).catch(e=>console.error('fallback failed', e));
+                    }
+                });
+        })();
+
+        // Navigation: ArrowLeft / ArrowRight change selected object in BOTH viewers
+        (function installGlobalNav() {
+            function navBoth(delta) {
+                try {
+                    // Safely obtain the objectSelect elements from the viewer APIs
+                    const lApi = (typeof left.getElements === 'function') ? left.getElements() : left.getElements;
+                    const rApi = (typeof right.getElements === 'function') ? right.getElements() : right.getElements;
+                    const lsel = lApi && lApi.objectSelect;
+                    const rsel = rApi && rApi.objectSelect;
+                    [lsel, rsel].forEach((select) => {
+                        if (!select || select.options.length === 0) return;
+                        let idx = select.selectedIndex + delta;
+                        if (idx < 0) idx = select.options.length - 1;
+                        if (idx >= select.options.length) idx = 0;
+                        select.selectedIndex = idx;
+                        select.dispatchEvent(new Event('change'));
+                    });
+                } catch (err) {
+                    console.warn('navBoth failed', err);
+                }
+            }
+
+            window.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowLeft') {
+                    navBoth(-1);
+                    e.preventDefault();
+                } else if (e.key === 'ArrowRight') {
+                    navBoth(1);
+                    e.preventDefault();
+                }
+            });
+        })();
+
+        // Global wheel handler: scroll anywhere to scale both loaded objects
+        (function installGlobalWheel() {
+            // scale factor using exponential mapping for smooth scaling
+            function wheelToFactor(deltaY) {
+                // tune sensitivity: 0.001 gives reasonable feel for typical mouse wheels
+                return Math.exp(-deltaY * 0.001);
+            }
+
+            window.addEventListener('wheel', (e) => {
+                // ignore if modifier keys are pressed to allow default browser behavior
+                if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) return;
+                e.preventDefault();
+                const factor = wheelToFactor(e.deltaY);
+                try {
+                    if (typeof left.scaleBy === 'function') left.scaleBy(factor);
+                    if (typeof right.scaleBy === 'function') right.scaleBy(factor);
+                } catch (err) {
+                    console.warn('Global wheel scale failed', err);
+                }
+            }, { passive: false });
+        })();
+    </script>
+</body>
+</html>
