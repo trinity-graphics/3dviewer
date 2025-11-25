@@ -517,11 +517,23 @@
                         if (typeof right.rotateBy === 'function') right.rotateBy(0, 0, -STEP);
                         handled = true;
                         break;
-                    case 'f': // reset
-                        if (typeof left.resetRotation === 'function') left.resetRotation();
-                        if (typeof right.resetRotation === 'function') right.resetRotation();
-                        handled = true;
-                        break;
+                            case 'f': // reset
+                                if (typeof left.resetRotation === 'function') left.resetRotation();
+                                if (typeof right.resetRotation === 'function') right.resetRotation();
+                                handled = true;
+                                break;
+                            case 't': // scale up
+                                try {
+                                    const up = 1.05; if (typeof left.scaleBy === 'function') left.scaleBy(up); if (typeof right.scaleBy === 'function') right.scaleBy(up);
+                                } catch (err) { console.warn('scale up failed', err); }
+                                handled = true;
+                                break;
+                            case 'g': // scale down
+                                try {
+                                    const down = 1.0 / 1.05; if (typeof left.scaleBy === 'function') left.scaleBy(down); if (typeof right.scaleBy === 'function') right.scaleBy(down);
+                                } catch (err) { console.warn('scale down failed', err); }
+                                handled = true;
+                                break;
                 }
                 if (handled) {
                     e.preventDefault();
@@ -529,20 +541,19 @@
             });
         })();
 
-        // Add global instruction area at bottom center
+        // Add global instruction area at bottom right
         (function addGlobalInstructions() {
             const div = document.createElement('div');
             div.style.position = 'fixed';
             div.style.bottom = '6px';
-            div.style.left = '50%';
-            div.style.transform = 'translateX(-50%)';
+            div.style.right = '6px';
             div.style.padding = '6px 10px';
             div.style.background = 'rgba(0,0,0,0.6)';
             div.style.color = '#fff';
             div.style.borderRadius = '6px';
             div.style.fontSize = '12px';
             div.style.zIndex = '1000';
-            div.innerHTML = 'Keys: W/S = rotate X | A/D = rotate Y | Q/E = rotate Z | F = reset rotations';
+            div.innerHTML = 'Keys: W/S = rotate X | A/D = rotate Y | Q/E = rotate Z | T/G = scale up/down | ←/→ = prev/next object | F = reset';
             document.body.appendChild(div);
         })();
     </script>
