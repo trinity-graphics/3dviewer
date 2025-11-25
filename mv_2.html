@@ -411,8 +411,10 @@
         (function installGlobalWheel() {
             // scale factor using exponential mapping for smooth scaling
             function wheelToFactor(deltaY) {
-                // tune sensitivity: 0.001 gives reasonable feel for typical mouse wheels
-                return Math.exp(-deltaY * 0.001);
+                // tune sensitivity: smaller value => less sensitive (slower scaling)
+                // previous value 0.001 was too aggressive for many mice; reduce to 0.00025
+                const SENS = 0.00025;
+                return Math.exp(-deltaY * SENS);
             }
 
             window.addEventListener('wheel', (e) => {
