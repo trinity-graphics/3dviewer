@@ -343,6 +343,10 @@
                 const wireframeMaterial = new THREE.MeshBasicMaterial({
                     color: 0x000000,
                     wireframe: true,
+                    side: THREE.DoubleSide,
+                    depthTest: false,
+                    depthWrite: false,
+                    transparent: true,
                 });
 
                 wireframeObject.traverse((child) => {
@@ -351,6 +355,17 @@
                     }
                 });
                 scene.add(wireframeObject);
+                // draw wireframe on top to avoid z-fighting with the solid mesh
+                wireframeObject.traverse((c) => {
+                    if (c.isMesh) {
+                        c.renderOrder = 999;
+                        if (c.material) {
+                            c.material.depthTest = false;
+                            c.material.depthWrite = false;
+                            c.material.transparent = true;
+                        }
+                    }
+                });
             }
 
             if (mode === 'components') {
@@ -489,6 +504,8 @@
                 // Use MeshPhongMaterial (or clone original) but enable vertexColors
                 const mat = mesh.material && mesh.material.clone ? mesh.material.clone() : new THREE.MeshPhongMaterial();
                 mat.vertexColors = true;
+                // Ensure faces aren't hidden due to backface culling or missing normals
+                mat.side = THREE.DoubleSide;
                 mesh.material = mat;
                 // Mark that we applied component coloring
                 rootObject._componentColorBackup = true;
@@ -608,6 +625,17 @@
                 `/object?path=${encodeURIComponent(path)}`,
                 (object) => {
                     currentObject = object;
+                        // Clean up meshes: remove degenerate triangles, compute normals,
+                        // enable polygon offset to reduce z-fighting, and make materials
+                        // double-sided so faces aren't hidden due to winding.
+                        currentObject.traverse((child) => {
+                            if (!child.isMesh) return;
+                            try {
+                                cleanMeshGeometry(child);
+                            } catch (e) {
+                                console.warn('cleanMeshGeometry failed', e);
+                            }
+                        });
                     
                     // Update file name display
                     const fileName = path.split('/').pop();
@@ -664,6 +692,94 @@
                     console.error('An error happened', error);
                 }
             );
+        }
+
+        // Remove degenerate triangles, compute normals, and adjust material properties
+        function cleanMeshGeometry(mesh) {
+            const geom = mesh.geometry;
+            if (!geom || !geom.attributes || !geom.attributes.position) return;
+
+            const posAttr = geom.attributes.position;
+            const posArray = posAttr.array;
+
+            const vA = new THREE.Vector3();
+            const vB = new THREE.Vector3();
+            const vC = new THREE.Vector3();
+            const ab = new THREE.Vector3();
+            const cb = new THREE.Vector3();
+
+            const areaEps = 1e-12; // triangles with area <= this are degenerate
+
+            if (geom.index) {
+                const idx = Array.from(geom.index.array);
+                const kept = [];
+                for (let i = 0; i < idx.length; i += 3) {
+                    const ia = idx[i] * 3;
+                    const ib = idx[i+1] * 3;
+                    const ic = idx[i+2] * 3;
+                    vA.set(posArray[ia], posArray[ia+1], posArray[ia+2]);
+                    vB.set(posArray[ib], posArray[ib+1], posArray[ib+2]);
+                    vC.set(posArray[ic], posArray[ic+1], posArray[ic+2]);
+                    ab.subVectors(vB, vA);
+                    cb.subVectors(vC, vA);
+                    const area2 = ab.cross(cb).lengthSq();
+                    if (area2 > areaEps) {
+                        kept.push(idx[i], idx[i+1], idx[i+2]);
+                    }
+                }
+                if (kept.length !== idx.length) {
+                    geom.setIndex(kept);
+                    geom.index.needsUpdate = true;
+                }
+            } else {
+                // non-indexed -> rebuild positions array keeping only non-degenerate triangles
+                const newPos = [];
+                for (let i = 0; i < posArray.length; i += 9) {
+                    vA.set(posArray[i], posArray[i+1], posArray[i+2]);
+                    vB.set(posArray[i+3], posArray[i+4], posArray[i+5]);
+                    vC.set(posArray[i+6], posArray[i+7], posArray[i+8]);
+                    ab.subVectors(vB, vA);
+                    cb.subVectors(vC, vA);
+                    const area2 = ab.cross(cb).lengthSq();
+                    if (area2 > areaEps) {
+                        newPos.push(
+                            vA.x, vA.y, vA.z,
+                            vB.x, vB.y, vB.z,
+                            vC.x, vC.y, vC.z
+                        );
+                    }
+                }
+                if (newPos.length !== posArray.length) {
+                    const newArr = new Float32Array(newPos);
+                    geom.setAttribute('position', new THREE.BufferAttribute(newArr, 3));
+                }
+            }
+
+            // Recompute normals if missing or after re-indexing/cleanup
+            try {
+                if (!geom.attributes.normal || geom.attributes.normal.count === 0) {
+                    geom.computeVertexNormals();
+                } else {
+                    // recompute in case indices changed
+                    geom.computeVertexNormals();
+                }
+            } catch (e) {
+                console.warn('computeVertexNormals failed', e);
+            }
+
+            // Ensure material exists and is double-sided; enable polygon offset to
+            // reduce z-fighting when overlaying wireframes or duplicate surfaces.
+            if (!mesh.material) mesh.material = new THREE.MeshPhongMaterial();
+            try {
+                if (mesh.material.side === undefined) mesh.material.side = THREE.DoubleSide;
+                mesh.material.side = THREE.DoubleSide;
+                mesh.material.polygonOffset = true;
+                mesh.material.polygonOffsetFactor = 1;
+                mesh.material.polygonOffsetUnits = 1;
+                mesh.material.needsUpdate = true;
+            } catch (e) {
+                console.warn('failed to set material flags', e);
+            }
         }
 
         window.addEventListener('resize', () => {

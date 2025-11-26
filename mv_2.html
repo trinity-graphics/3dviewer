@@ -309,6 +309,7 @@
                             if (c.isMesh) {
                                 if (c.geometry && c.geometry.clone) c.geometry = c.geometry.clone();
                                 if (c.material && c.material.clone) c.material = c.material.clone();
+                                c.material.side = THREE.DoubleSide;
                             }
                         });
                         currentObject = object;
