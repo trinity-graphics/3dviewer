@@ -625,6 +625,7 @@
                 `/object?path=${encodeURIComponent(path)}`,
                 (object) => {
                     currentObject = object;
+                    // currentObject.material = new THREE.MeshPhongMaterial({ color: 0xaaaaaa, side: THREE.DoubleSide });
                         // Clean up meshes: remove degenerate triangles, compute normals,
                         // enable polygon offset to reduce z-fighting, and make materials
                         // double-sided so faces aren't hidden due to winding.

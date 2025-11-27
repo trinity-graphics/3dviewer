@@ -338,9 +338,23 @@
 
             // return an API for external wiring
             return {
-                populateDatasets(datasets) {
+                populateDatasets(datasets, defaultDataset) {
                     datasetSelect.innerHTML = '';
                     datasets.forEach(ds => { const o = document.createElement('option'); o.value = ds; o.textContent = ds; datasetSelect.appendChild(o); });
+                    // If a defaultDataset was provided and exists in the list, select it.
+                    if (defaultDataset) {
+                        for (let i = 0; i < datasetSelect.options.length; i++) {
+                            if (datasetSelect.options[i].value === defaultDataset) {
+                                datasetSelect.selectedIndex = i;
+                                break;
+                            }
+                        }
+                    }
+                    // Disable the dataset selector so the user cannot change it.
+                    datasetSelect.disabled = true;
+                    datasetSelect.style.opacity = '0.65';
+                    datasetSelect.style.pointerEvents = 'none';
+                    datasetSelect.title = 'Dataset fixed by page';
                     datasetSelect.dispatchEvent(new Event('change'));
                 },
                 getElements() { return { datasetSelect, objectSelect, viewModeSelect, weldToggle }; },
@@ -409,12 +423,16 @@
                 .then(data => {
                     fileData = data;
                     const datasets = Object.keys(data || {});
-                    left.populateDatasets(datasets); right.populateDatasets(datasets);
+                    // Default left viewer to first dataset and right to second (if available)
+                    const leftDefault = datasets.length > 0 ? datasets[0] : undefined;
+                    const rightDefault = datasets.length > 1 ? datasets[1] : leftDefault;
+                    left.populateDatasets(datasets, leftDefault);
+                    right.populateDatasets(datasets, rightDefault);
                 })
                 .catch(err => {
                     console.warn('/data failed, trying fallback', err);
                     if (err && err.message === 'non-json-response') {
-                        fetch('/data_files.json', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('fallback ' + r.status); return r.json(); }).then(fd => { fileData = fd; const datasets = Object.keys(fd||{}); left.populateDatasets(datasets); right.populateDatasets(datasets); }).catch(e=>console.error('fallback failed', e));
+                        fetch('/data_files.json', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('fallback ' + r.status); return r.json(); }).then(fd => { fileData = fd; const datasets = Object.keys(fd||{}); const leftDefault = datasets.length > 0 ? datasets[0] : undefined; const rightDefault = datasets.length > 1 ? datasets[1] : leftDefault; left.populateDatasets(datasets, leftDefault); right.populateDatasets(datasets, rightDefault); }).catch(e=>console.error('fallback failed', e));
                     }
                 });
         })();
