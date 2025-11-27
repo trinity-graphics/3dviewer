@@ -212,7 +212,16 @@
                 const list = fileData[ds] || [];
                 objectSelect.innerHTML = '';
                 list.forEach(p => { const opt = document.createElement('option'); opt.value = p; opt.textContent = p.split('/').pop(); objectSelect.appendChild(opt); });
-                objectSelect.dispatchEvent(new Event('change'));
+                // Select the first object automatically (if any) and load it,
+                // then disable the object select so the user cannot change files.
+                if (objectSelect.options.length > 0) {
+                    objectSelect.selectedIndex = 0;
+                    objectSelect.dispatchEvent(new Event('change'));
+                }
+                objectSelect.disabled = true;
+                objectSelect.style.opacity = '0.65';
+                objectSelect.style.pointerEvents = 'none';
+                objectSelect.title = 'File fixed by page';
             });
 
             objectSelect.addEventListener('change', () => {
